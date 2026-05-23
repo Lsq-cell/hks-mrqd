@@ -17,6 +17,7 @@ import {
   User,
   Video,
 } from "lucide-react";
+import bodyImage from "./assets/body-cutout.png";
 
 type PageId =
   | "home"
@@ -149,8 +150,21 @@ function Card({
   );
 }
 
-function Pill({ children, active = false }: { children: React.ReactNode; active?: boolean; key?: React.Key }) {
-  return <button className={`pill ${active ? "is-active" : ""}`}>{children}</button>;
+function Pill({
+  children,
+  active = false,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active?: boolean;
+  key?: React.Key;
+  onClick?: () => void;
+}) {
+  return (
+    <button className={`pill ${active ? "is-active" : ""}`} type="button" aria-pressed={active} onClick={onClick}>
+      {children}
+    </button>
+  );
 }
 
 function Tuantuan() {
@@ -189,7 +203,7 @@ function getPetBounds() {
   const height = window.innerHeight;
   return {
     minX: Math.max(24, width * 0.12),
-    maxX: Math.max(260, width * 0.43),
+    maxX: Math.max(300, width * 0.5),
     minY: Math.max(230, height * 0.56),
     maxY: Math.max(360, height - 198),
   };
@@ -308,10 +322,6 @@ function DesktopPet() {
         <span className="pet-cheek right" />
         <span className="pet-mouth" />
         <span className="pet-bandage" />
-        <span className="pet-fuzz f1" />
-        <span className="pet-fuzz f2" />
-        <span className="pet-fuzz f3" />
-        <span className="pet-fuzz f4" />
         <span className="pet-emote e1" />
         <span className="pet-emote e2" />
         <span className="pet-z">Z</span>
@@ -323,20 +333,45 @@ function DesktopPet() {
   );
 }
 
-function HumanFigure({ compact = false }: { compact?: boolean }) {
+const bodyRegionMarkers = [
+  { left: "50%", top: "11%" },
+  { left: "60%", top: "23%" },
+  { left: "50%", top: "31%" },
+  { left: "50%", top: "42%" },
+  { left: "50%", top: "53%" },
+  { left: "42%", top: "66%" },
+  { left: "42%", top: "75%" },
+  { left: "57%", top: "85%" },
+  { left: "57%", top: "95%" },
+];
+
+function HumanFigure({
+  compact = false,
+  selectedRegionIndexes = [],
+  onRegionSelect,
+}: {
+  compact?: boolean;
+  selectedRegionIndexes?: number[];
+  onRegionSelect?: (index: number) => void;
+}) {
+  const markerIndexes = selectedRegionIndexes.includes(9)
+    ? bodyRegionMarkers.map((_, index) => index)
+    : selectedRegionIndexes.filter((index) => index >= 0 && index < bodyRegionMarkers.length);
+
   return (
     <div className={`human-figure ${compact ? "compact" : ""}`}>
-      <div className="figure-head" />
-      <div className="figure-neck hot" />
-      <div className="figure-torso">
-        <span className="spine" />
-        <span className="shoulder-line hot" />
-        <span className="core-glow" />
-      </div>
-      <div className="arm left hot" />
-      <div className="arm right hot" />
-      <div className="leg left" />
-      <div className="leg right" />
+      <img className="body-image" src={bodyImage} alt="" aria-hidden="true" />
+      {markerIndexes.map((index) => (
+        <button
+          className="body-dot is-active"
+          style={bodyRegionMarkers[index]}
+          type="button"
+          aria-label={regions[index]}
+          aria-pressed="true"
+          onClick={() => onRegionSelect?.(index)}
+          key={regions[index]}
+        />
+      ))}
     </div>
   );
 }
@@ -405,23 +440,50 @@ function HomePage({ go }: { go: (page: PageId) => void }) {
 }
 
 function AwarenessPage({ go }: { go: (page: PageId) => void }) {
+  const [selectedFeelings, setSelectedFeelings] = useState([1]);
+  const [selectedRegions, setSelectedRegions] = useState([1]);
+  const [selectedScenes, setSelectedScenes] = useState([0]);
+  const toggleIndex = (items: number[], index: number) =>
+    items.includes(index) ? items.filter((item) => item !== index) : [...items, index];
+
   return (
     <div className="page awareness-layout">
       <Card className="control-panel">
         <h2>1. 今天最明显的感觉是什么？</h2>
-        <div className="pill-grid">{feelings.map((item, i) => <Pill key={item} active={i === 1}>{item}</Pill>)}</div>
+        <div className="pill-grid">
+          {feelings.map((item, i) => (
+            <Pill key={item} active={selectedFeelings.includes(i)} onClick={() => setSelectedFeelings((current) => toggleIndex(current, i))}>
+              {item}
+            </Pill>
+          ))}
+        </div>
       </Card>
       <Card className="body-picker">
         <div>
           <h2>2. 哪个区域最明显？</h2>
           <p>团团会把区域、感觉和场景连起来理解。</p>
         </div>
-        <HumanFigure />
-        <div className="region-list">{regions.map((item) => <Pill key={item} active={item === "肩颈"}>{item}</Pill>)}</div>
+        <HumanFigure
+          selectedRegionIndexes={selectedRegions}
+          onRegionSelect={(index) => setSelectedRegions((current) => toggleIndex(current, index))}
+        />
+        <div className="region-list">
+          {regions.map((item, i) => (
+            <Pill key={item} active={selectedRegions.includes(i)} onClick={() => setSelectedRegions((current) => toggleIndex(current, i))}>
+              {item}
+            </Pill>
+          ))}
+        </div>
       </Card>
       <Card className="control-panel scene-panel">
         <h2>3. 最近通常发生在？</h2>
-        <div className="pill-grid">{scenes.map((item, i) => <Pill key={item} active={i === 0}>{item}</Pill>)}</div>
+        <div className="pill-grid">
+          {scenes.map((item, i) => (
+            <Pill key={item} active={selectedScenes.includes(i)} onClick={() => setSelectedScenes((current) => toggleIndex(current, i))}>
+              {item}
+            </Pill>
+          ))}
+        </div>
         <div className="companion-note">
           <Tuantuan />
           <p>我会先理解你的身体状态，再给你轻一点的恢复方案。</p>
@@ -1049,7 +1111,7 @@ export default function App() {
         </nav>
         <Card className="sidebar-companion">
           <Tuantuan />
-          <strong>团团在线</strong>
+          <strong>团团</strong>
           <p>今天会用更轻的节奏陪你恢复肩颈。</p>
         </Card>
       </aside>
