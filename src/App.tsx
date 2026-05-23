@@ -31,6 +31,66 @@ type PageId =
   | "explore"
   | "coach";
 
+type ExerciseKey = "squat" | "pushup" | "curl";
+
+type PoseSessionState = {
+  sessionId?: string;
+  exerciseLabel?: string;
+  status?: "idle" | "active" | "finished" | string;
+  remaining?: number;
+  detected?: boolean;
+  count?: number;
+  attempts?: number;
+  stage?: string;
+  score?: number;
+  message?: string;
+  liveMessage?: string;
+  liveErrors?: string[];
+  processMs?: number;
+  annotatedImage?: string;
+  summary?: {
+    grade?: string;
+    points?: number;
+    valid_reps?: number;
+    attempts?: number;
+    avg_score?: number;
+  };
+};
+
+type CoachExercise = {
+  key: ExerciseKey;
+  title: string;
+  text: string;
+  note: string;
+};
+
+const poseApiBase =
+  ((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_POSE_API_URL || "http://127.0.0.1:8001").replace(
+    /\/$/,
+    "",
+  );
+
+const coachExercises: CoachExercise[] = [
+  {
+    key: "squat",
+    title: "下肢力量 | 深蹲",
+    text: "膝盖轨迹 / 髋部后坐 / 左右对称",
+    note: "建议正面入镜，脚踝、膝盖、髋部都要可见。",
+  },
+  {
+    key: "pushup",
+    title: "上肢稳定 | 俯卧撑",
+    text: "肘角幅度 / 身体直线 / 核心塌陷",
+    note: "建议侧面入镜，肩、肘、腕、髋、踝保持在画面内。",
+  },
+  {
+    key: "curl",
+    title: "手臂控制 | 弯举",
+    text: "肘部漂移 / 借力摆动 / 动作幅度",
+    note: "建议侧面或 45 度入镜，训练手臂完整可见。",
+  },
+];
+
 const flow: PageId[] = [
   "home",
   "awareness",
@@ -567,6 +627,270 @@ function ObservationPage({ go }: { go: (page: PageId) => void }) {
   );
 }
 
+function IntegratedObservationPage({ go, exercise }: { go: (page: PageId) => void; exercise: CoachExercise }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [sessionId, setSessionId] = useState<string>("");
+  const [session, setSession] = useState<PoseSessionState>({});
+  const [apiState, setApiState] = useState<"connecting" | "ready" | "offline">("connecting");
+  const [streamReady, setStreamReady] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+
+  const metrics = [
+    ["标准次数", String(session.count ?? 0)],
+    ["尝试次数", String(session.attempts ?? 0)],
+    ["最近得分", `${session.score ?? 100}`],
+    ["识别耗时", session.processMs ? `${session.processMs}ms` : "--"],
+  ];
+
+  const stageLabel: Record<string, string> = {
+    ready: "准备",
+    up: "上方",
+    down: "下方",
+  };
+
+  const apiStatusText =
+    apiState === "ready" ? "Pose API 已连接" : apiState === "connecting" ? "正在连接 Pose API" : "Pose API 未连接";
+  const liveMessage =
+    session.liveMessage ||
+    (apiState === "offline"
+      ? "姿态识别服务未连接。请先启动 Python Pose API，再回到这里刷新。"
+      : "正在连接摄像头和姿态识别服务。");
+
+  useEffect(() => {
+    let alive = true;
+
+    async function createPoseSession() {
+      setApiState("connecting");
+      setSession({});
+      setSessionId("");
+
+      try {
+        const health = await fetch(`${poseApiBase}/api/health`);
+        if (!health.ok) throw new Error("Pose API health check failed");
+
+        const createResponse = await fetch(`${poseApiBase}/api/session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ exercise: exercise.key, durationSeconds: 45 }),
+        });
+        if (!createResponse.ok) throw new Error("Pose API session create failed");
+
+        const created = (await createResponse.json()) as PoseSessionState;
+        if (!alive || !created.sessionId) return;
+        setSessionId(created.sessionId);
+        setSession(created);
+
+        const startResponse = await fetch(`${poseApiBase}/api/session/${created.sessionId}/action`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "start" }),
+        });
+        if (startResponse.ok) {
+          const started = (await startResponse.json()) as PoseSessionState;
+          if (alive) setSession(started);
+        }
+        if (alive) setApiState("ready");
+      } catch (error) {
+        console.warn("Pose API unavailable", error);
+        if (alive) {
+          setApiState("offline");
+          setSession({
+            exerciseLabel: exercise.title,
+            liveMessage: "没有连上 Python 姿态识别服务，先启动后端 API 就能接入真实评分。",
+            score: 100,
+            count: 0,
+            attempts: 0,
+          });
+        }
+      }
+    }
+
+    createPoseSession();
+    return () => {
+      alive = false;
+    };
+  }, [exercise]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function startCamera() {
+      setStreamReady(false);
+      setCameraError("");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 20 } },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        setStreamReady(true);
+      } catch (error) {
+        console.warn("Camera unavailable", error);
+        if (!cancelled) {
+          setCameraError("摄像头未授权或不可用。允许浏览器摄像头权限后即可开始真实识别。");
+        }
+      }
+    }
+
+    startCamera();
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setStreamReady(false);
+    };
+  }, [exercise]);
+
+  useEffect(() => {
+    if (!sessionId || !streamReady || apiState !== "ready") return;
+
+    let stopped = false;
+    let timer: number | undefined;
+
+    async function sendFrame() {
+      if (stopped) return;
+      const video = videoRef.current;
+      const canvas = captureCanvasRef.current;
+      const context = canvas?.getContext("2d");
+
+      if (video && canvas && context && video.readyState >= 2) {
+        const width = 416;
+        const ratio = video.videoHeight && video.videoWidth ? video.videoHeight / video.videoWidth : 0.75;
+        canvas.width = width;
+        canvas.height = Math.round(width * ratio);
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        try {
+          const response = await fetch(`${poseApiBase}/api/session/${sessionId}/frame`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageData: canvas.toDataURL("image/jpeg", 0.72) }),
+          });
+          if (!response.ok) throw new Error("Pose frame request failed");
+          const next = (await response.json()) as PoseSessionState;
+          if (!stopped) setSession(next);
+        } catch (error) {
+          console.warn("Pose frame request failed", error);
+          if (!stopped) setApiState("offline");
+        }
+      }
+
+      timer = window.setTimeout(sendFrame, 260);
+    }
+
+    sendFrame();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [apiState, sessionId, streamReady]);
+
+  const runSessionAction = async (action: "start" | "reset" | "finish") => {
+    if (!sessionId) return;
+    const response = await fetch(`${poseApiBase}/api/session/${sessionId}/action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (response.ok) {
+      const next = (await response.json()) as PoseSessionState;
+      setSession(next);
+    }
+  };
+
+  const restartSession = async () => {
+    await runSessionAction("reset");
+    await runSessionAction("start");
+  };
+
+  const finishSession = async () => {
+    await runSessionAction("finish");
+    go("feedback");
+  };
+
+  return (
+    <div className="page observation-grid">
+      <section className="camera-stage">
+        <div className="camera-top">
+          <button><Video size={18} /> {apiStatusText}</button>
+          <span>{session.exerciseLabel || exercise.title} · AI 实时观察</span>
+        </div>
+        <div className="backend-camera-feed">
+          <video
+            ref={videoRef}
+            className={`backend-video-frame ${session.annotatedImage ? "is-hidden" : ""}`}
+            playsInline
+            muted
+          />
+          {session.annotatedImage && <img className="backend-video-frame" src={session.annotatedImage} alt="AI 姿态识别标注画面" />}
+          {!streamReady && (
+            <div className="camera-placeholder">
+              <Video size={42} />
+              <strong>{cameraError || "正在等待摄像头画面"}</strong>
+              <span>{exercise.note}</span>
+            </div>
+          )}
+          <canvas ref={captureCanvasRef} className="capture-canvas" />
+        </div>
+        <div className={`pose-live-badge ${session.detected ? "detected" : ""}`}>
+          <span />
+          {session.detected ? "已识别人体彩点" : "等待完整入镜"}
+        </div>
+        <div className="metric-overlay">
+          {metrics.map(([label, value]) => (
+            <div key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+        <div className="camera-bottom">
+          <span>
+            阶段 {stageLabel[session.stage || ""] || session.stage || "准备"} · 剩余 {Math.ceil(session.remaining || 0)} 秒
+          </span>
+          <button onClick={restartSession}><Pause size={18} /> 重新开始</button>
+          <button className="primary" onClick={finishSession}>完成本组</button>
+        </div>
+      </section>
+      <Card className="ai-panel">
+        <div className="ai-panel-head">
+          <Brain />
+          <div>
+            <p className="eyebrow">AI 正在观察</p>
+            <h2>{exercise.title}</h2>
+          </div>
+        </div>
+        <blockquote>“{liveMessage}”</blockquote>
+        <div className="sense-list">
+          <div><span>服务状态</span><strong>{apiStatusText}</strong></div>
+          <div><span>当前阶段</span><strong>{stageLabel[session.stage || ""] || session.stage || "准备"}</strong></div>
+          <div><span>本轮评级</span><strong>{session.summary?.grade || "训练中"}</strong></div>
+        </div>
+        {session.liveErrors?.length ? (
+          <div className="live-error-list">
+            {session.liveErrors.map((error) => <span key={error}>{error}</span>)}
+          </div>
+        ) : (
+          <p className="soft-note">{exercise.note}</p>
+        )}
+        <p className="soft-note">
+          后端复用了现有 MediaPipe 与评分规则。这里显示的是 Python 服务实时返回的计数、评分和动作提示。
+        </p>
+      </Card>
+    </div>
+  );
+}
+
 function FeedbackPage({ go }: { go: (page: PageId) => void }) {
   return (
     <div className="page feedback-grid">
@@ -658,8 +982,29 @@ function CoachPage() {
   );
 }
 
+function IntegratedCoachPage({ onStartExercise }: { onStartExercise: (exercise: CoachExercise) => void }) {
+  return (
+    <div className="page catalog-grid coach">
+      {coachExercises.map((exercise, i) => (
+        <Card className="catalog-card" key={exercise.key}>
+          <div className={`coach-illustration c${i + 1}`}>
+            <HumanFigure compact />
+          </div>
+          <h2>{exercise.title}</h2>
+          <p>{exercise.text}</p>
+          <p className="coach-note">{exercise.note}</p>
+          <button className="ghost-button" onClick={() => onStartExercise(exercise)}>
+            进入实时训练 <ChevronRight size={16} />
+          </button>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState<PageId>("home");
+  const [selectedExercise, setSelectedExercise] = useState<CoachExercise>(coachExercises[0]);
   const meta = pageMeta[page];
   const nextPage = useMemo(() => flow[(flow.indexOf(page) + 1) % flow.length], [page]);
 
@@ -674,11 +1019,14 @@ export default function App() {
     if (page === "muscles") return <MusclesPage go={setPage} />;
     if (page === "plan") return <PlanPage go={setPage} />;
     if (page === "training") return <TrainingPage go={setPage} />;
-    if (page === "observation") return <ObservationPage go={setPage} />;
+    if (page === "observation") return <IntegratedObservationPage go={setPage} exercise={selectedExercise} />;
     if (page === "feedback") return <FeedbackPage go={setPage} />;
     if (page === "archive") return <ArchivePage />;
     if (page === "explore") return <ExplorePage />;
-    return <CoachPage />;
+    return <IntegratedCoachPage onStartExercise={(exercise) => {
+      setSelectedExercise(exercise);
+      setPage("observation");
+    }} />;
   };
 
   return (
