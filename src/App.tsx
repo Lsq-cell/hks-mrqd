@@ -14,10 +14,18 @@ import {
   Pause,
   Search,
   Sparkles,
-  User,
   Video,
 } from "lucide-react";
+import archiveImage from "./assets/dangan.png";
 import bodyImage from "./assets/body-cutout.png";
+import neckStretchImage from "./assets/jingce-qls.png";
+import muscleExplainImage from "./assets/jiroujiangjie.png";
+import musclePartOneImage from "./assets/jirou3-fenbie(1)(1).png";
+import musclePartTwoImage from "./assets/jirou3-fenbie(2)(2).png";
+import musclePartThreeImage from "./assets/jirou3-fenbie(3)(3).png";
+import tuantuanImage from "./assets/tuantuan-xin.png";
+
+const User = Dumbbell;
 
 type PageId =
   | "home"
@@ -107,7 +115,7 @@ const flow: PageId[] = [
 ];
 
 const pageMeta: Record<PageId, { index: string; title: string; hint: string }> = {
-  home: { index: "01", title: "首页｜今日状态入口", hint: "从一点点身体觉察开始" },
+  home: { index: "01", title: "首页 | 今日状态入口", hint: "从一点点身体觉察开始" },
   awareness: { index: "02", title: "身体觉察页", hint: "先听见身体正在说什么" },
   understanding: { index: "03", title: "身体理解页", hint: "把不舒服背后的链路说清楚" },
   muscles: { index: "04", title: "核心肌肉溯源页", hint: "找到肩颈代偿的源头" },
@@ -122,10 +130,9 @@ const pageMeta: Record<PageId, { index: string; title: string; hint: string }> =
 
 const navItems = [
   { label: "今日状态", page: "home" as PageId, icon: Home },
-  { label: "身体档案", page: "archive" as PageId, icon: CalendarDays },
   { label: "成长变化", page: "feedback" as PageId, icon: LineChart },
+  { label: "身体档案", page: "archive" as PageId, icon: CalendarDays },
   { label: "训练中心", page: "coach" as PageId, icon: Dumbbell },
-  { label: "我的", page: "archive" as PageId, icon: User },
 ];
 
 const feelings = ["酸胀", "发紧", "疲惫", "沉重", "无力", "僵硬"];
@@ -170,15 +177,7 @@ function Pill({
 function Tuantuan() {
   return (
     <div className="tuantuan" aria-label="团团">
-      <span className="tuantuan-glow" />
-      <span className="fur f1" />
-      <span className="fur f2" />
-      <span className="fur f3" />
-      <span className="tuantuan-eye left" />
-      <span className="tuantuan-eye right" />
-      <span className="tuantuan-blush left" />
-      <span className="tuantuan-blush right" />
-      <span className="tuantuan-smile" />
+      <img src={tuantuanImage} alt="" aria-hidden="true" />
     </div>
   );
 }
@@ -502,14 +501,14 @@ function UnderstandingPage({ go }: { go: (page: PageId) => void }) {
         <h1>你的肩膀，可能正在替脖子工作</h1>
         <p>这是身体在久坐低头后做出的临时补偿，不是你不够放松。先看懂它，再温柔地把工作还给该参与的肌肉。</p>
         <div className="chain">
-          {["久坐低头", "头部前移", "深层颈屈肌参与不足", "斜方肌上束/肩胛提肌代偿", "肩颈酸胀"].map((step) => (
+          {["久坐低头", "头部前移", "深层颈屈肌参与不足", "斜方肌上束和肩胛提肌代偿", "肩颈酸胀"].map((step) => (
             <span key={step}>{step}</span>
           ))}
         </div>
         <button className="primary" onClick={() => go("muscles")}>查看相关肌肉 <ChevronRight size={18} /></button>
       </Card>
       <Card className="body-map-card">
-        <HumanFigure />
+        <img className="muscle-explain-image" src={muscleExplainImage} alt="" aria-hidden="true" loading="eager" decoding="sync" />
         <div className="bubble-note">颈肩区域正在承担更多稳定任务，先让它慢慢卸力。</div>
       </Card>
     </div>
@@ -517,6 +516,7 @@ function UnderstandingPage({ go }: { go: (page: PageId) => void }) {
 }
 
 function MusclesPage({ go }: { go: (page: PageId) => void }) {
+  const musclePartImages = [musclePartOneImage, musclePartTwoImage, musclePartThreeImage];
   const muscles = [
     ["01", "斜方肌上束", "低头和耸肩时容易过度工作，带来肩颈上缘的酸胀。"],
     ["02", "肩胛提肌", "连接颈椎与肩胛，紧张时会让脖子侧后方变沉。"],
@@ -525,8 +525,14 @@ function MusclesPage({ go }: { go: (page: PageId) => void }) {
   return (
     <div className="page muscles-page">
       <div className="muscle-cards">
-        {muscles.map(([n, title, text]) => (
+        {muscles.map(([n, title, text], index) => (
           <Card className="muscle-card" key={title}>
+            <img
+              className="muscle-card-visual"
+              src={musclePartImages[index]}
+              alt=""
+              aria-hidden="true"
+            />
             <span>{n}</span>
             <h3>{title}</h3>
             <p>{text}</p>
@@ -540,7 +546,7 @@ function MusclesPage({ go }: { go: (page: PageId) => void }) {
           <ChevronRight />
           <strong>再激活稳定肌群</strong>
           <ChevronRight />
-          <strong>最后AI观察动作</strong>
+          <strong>最后 AI 观察动作</strong>
         </div>
         <button className="primary wide" onClick={() => go("plan")}>查看今日恢复方案 <ChevronRight size={18} /></button>
       </Card>
@@ -554,7 +560,7 @@ function PlanPage({ go }: { go: (page: PageId) => void }) {
       <Card className="plan-summary">
         <p className="eyebrow">今日目标</p>
         <h1>减少肩颈代偿</h1>
-        <p>预计时间：6分钟</p>
+        <p>预计时间：6 分钟</p>
         <div className="time-ring"><span>6</span><small>分钟</small></div>
       </Card>
       <Card className="move-list">
@@ -584,7 +590,7 @@ function TrainingPage({ go }: { go: (page: PageId) => void }) {
           <strong className="countdown">0:30</strong>
         </div>
         <div className="demo-zone">
-          <HumanFigure />
+          <img className="training-pose-image" src={neckStretchImage} alt="" aria-hidden="true" />
           <div className="breath-ring" />
         </div>
       </Card>
@@ -673,7 +679,7 @@ function ObservationPage({ go }: { go: (page: PageId) => void }) {
         <div className="ai-panel-head">
           <Brain />
           <div>
-            <p className="eyebrow">AI正在观察</p>
+            <p className="eyebrow">AI 正在观察</p>
             <h2>团团看见了你的肩颈</h2>
           </div>
         </div>
@@ -683,7 +689,7 @@ function ObservationPage({ go }: { go: (page: PageId) => void }) {
           <div><span>左右对称</span><strong>良好</strong></div>
           <div><span>肩颈区域</span><strong>偏高</strong></div>
         </div>
-        <p className="soft-note">这不是考试打分，团团只是在帮你发现身体正在怎么努力。</p>
+        <p className="soft-note">这不是考试打分，团团只是帮你发现身体正在怎么努力。</p>
       </Card>
     </div>
   );
@@ -957,11 +963,11 @@ function FeedbackPage({ go }: { go: (page: PageId) => void }) {
   return (
     <div className="page feedback-grid">
       <Card className="celebrate-card">
-        <Tuantuan />
         <h1>今天恢复完成了！</h1>
-        <p>你照顾了肩颈6分钟</p>
+        <p>你照顾了肩颈 6 分钟</p>
       </Card>
       <Card className="feedback-card">
+        <Tuantuan />
         <h2>现在感觉怎么样？</h2>
         {["轻松了一些", "有一点缓解", "变化不明显"].map((item, i) => <button className={i === 0 ? "selected" : ""} key={item}>{item}</button>)}
         <button className="primary wide" onClick={() => go("archive")}>保存到身体档案 <ChevronRight size={18} /></button>
@@ -974,6 +980,7 @@ function ArchivePage() {
   const days = Array.from({ length: 30 }, (_, i) => i + 1);
   return (
     <div className="page archive-grid">
+      <img className="archive-dashboard-image" src={archiveImage} alt="" aria-hidden="true" />
       <Card className="profile-card">
         <Tuantuan />
         <p className="eyebrow">用户</p>
@@ -1093,6 +1100,7 @@ export default function App() {
 
   return (
     <main className="wellness-app">
+      <img className="asset-preload" src={muscleExplainImage} alt="" aria-hidden="true" />
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark"><Sparkles size={20} /></div>
@@ -1102,7 +1110,7 @@ export default function App() {
           </div>
         </div>
         <nav className="side-nav" aria-label="主导航">
-          {navItems.map(({ label, page: target, icon: Icon }) => (
+          {navItems.slice(0, 4).map(({ label, page: target, icon: Icon }) => (
             <button className={page === target ? "active" : ""} onClick={() => setPage(target)} key={label}>
               <Icon size={18} />
               {label}
@@ -1134,9 +1142,11 @@ export default function App() {
           {renderPage()}
         </section>
 
-        <button className="floating-next" onClick={() => setPage(nextPage)}>
-          下一页 <ChevronRight size={18} />
-        </button>
+        {page !== "archive" && (
+          <button className="floating-next" onClick={() => setPage(nextPage)}>
+            下一页 <ChevronRight size={18} />
+          </button>
+        )}
       </section>
       <DesktopPet />
     </main>
